@@ -1,36 +1,288 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>SunPos</title>
+    <title>Solar Tracker 3D</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/addons/p5.dom.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background: #000; }
+        canvas { display: block; }
+    </style>
 </head>
-<body bgcolor ="#000000">
-    
+<body>
     <script>
         let rotationX = 0;
         let rotationY = 0;
-        let canvas;
+        let sunAzimuth = 0;
+        let sunAltitude = 0;
+        let sunPosition;
+
+        
+        let simulatedTime = 0;
+        let simulatedDay = 1;
+        let simulatedMonth = 1;
+        let simulatedYear = 2024;
+        let timeAcceleration = false;
+        let timeScale = 1.0;
+
+        
+        let fullOrbitTrajectory = [];
+        let showFullOrbit = true;
+        let orbitResolution = 72;
 
         function setup() {
-            canvas = createCanvas(1920, 1080, WEBGL);
-            canvas.parent('sketch-container');
+            createCanvas(windowWidth, windowHeight, WEBGL);
+            sunPosition = createVector(0, 0, 0);
+            
+           
+            let now = new Date();
+            simulatedTime = now.getHours() + now.getMinutes()/60.0 + now.getSeconds()/3600.0;
+            simulatedDay = now.getDate();
+            simulatedMonth = now.getMonth() + 1;
+            simulatedYear = now.getFullYear();
+            
+       
+            createFullOrbitTrajectory();
         }
 
         function draw() {
             background(0);
-            fill(0);
-            stroke(255); 
-            strokeWeight(3);
             
-            push();
+            
+            updateTime();
+            
+           
+            calculateSunPosition();
+            
+           
+            directionalLight(255, 255, 255, 0, -1, 0);
+            ambientLight(50);
+            
+            
             rotateX(rotationX);
             rotateY(rotationY);
             
-            rectMode(CENTER);
-            rect(0, 0, 500, 500);
+        
+            drawHorizon();
             
-            grid(500, 500, 10, 10);
+            
+            if (showFullOrbit) {
+                drawFullOrbitTrajectory();
+            }
+            
+            
+            drawSun();
+            
+           
+            drawInfo();
+        }
+
+        function drawHorizon() {
+            push();
+            noFill();
+            stroke(100, 150, 100, 100);
+            strokeWeight(1);
+            
+           
+            let planeSize = 1000;
+            let gridCells = 20;
+            let cellSize = planeSize / gridCells;
+            
+           
+            for (let i = -gridCells/2; i <= gridCells/2; i++) {
+                let x = i * cellSize;
+                line(x, 0, -planeSize/2, x, 0, planeSize/2);
+            }
+            for (let j = -gridCells/2; j <= gridCells/2; j++) {
+                let z = j * cellSize;
+                line(-planeSize/2, 0, z, planeSize/2, 0, z);
+            }
+            pop();
+        }
+
+        function createFullOrbitTrajectory() {
+            fullOrbitTrajectory = [];
+            for (let i = 0; i < orbitResolution; i++) {
+                let hour = map(i, 0, orbitResolution, 0, 24);
+                let pos = calculateSunPositionForTime(hour);
+                
+                
+                pos.y = -pos.y;
+                
+                fullOrbitTrajectory.push(pos);
+            }
+        }
+
+        function calculateSunPositionForTime(hours) {
+            let N = dayOfYear(simulatedYear, simulatedMonth, simulatedDay);
+            let n = calculateN(simulatedYear, simulatedMonth, simulatedDay, hours);
+            let g = radians(357.528 + 0.9856003 * n);
+            g = normalizeAngle(g);
+            
+            let L = radians(280.460 + 0.9856474 * n);
+            L = normalizeAngle(L);
+            let lambda = L + radians(1.915) * sin(g) + radians(0.020) * sin(2*g);
+            
+            let epsilon = radians(23.439 - 0.0000004 * n);
+            let delta = asin(sin(epsilon) * sin(lambda));
+            
+            let latitude = radians(55.7558);
+            let hourAngle = radians(15 * (hours - 12));
+            
+            let alt = asin(sin(latitude) * sin(delta) + 
+                         cos(latitude) * cos(delta) * cos(hourAngle));
+            
+            let az = atan2(sin(hourAngle), 
+                          cos(hourAngle) * sin(latitude) - tan(delta) * cos(latitude));
+            az += PI;
+            
+            let distance = 800;
+            let x = distance * cos(az) * cos(alt);
+            let y = distance * sin(alt);
+            let z = distance * sin(az) * cos(alt);
+            
+            return createVector(x, y, z);
+        }
+
+        function drawFullOrbitTrajectory() {
+            if (fullOrbitTrajectory.length > 1) {
+                push();
+                noFill();
+                
+                
+                stroke(255, 100, 100, 150);
+                strokeWeight(3);
+                
+                beginShape();
+                for (let point of fullOrbitTrajectory) {
+                    vertex(point.x, point.y, point.z);
+                }
+                endShape();
+                
+               
+                strokeWeight(6);
+                for (let i = 0; i < fullOrbitTrajectory.length; i += 6) {
+                    let point = fullOrbitTrajectory[i];
+                    let hour = map(i, 0, fullOrbitTrajectory.length, 0, 24);
+                    
+                   
+                    if (hour < 6 || hour > 18) {
+                        stroke(100, 100, 255, 200);
+                    } else if (hour < 12) {
+                        stroke(255, 200, 100, 200);
+                    } else {
+                        stroke(255, 100, 100, 200);
+                    }
+                    
+                    point(point.x, point.y, point.z);
+                }
+                pop();
+            }
+        }
+
+        function updateTime() {
+            if (timeAcceleration) {
+                simulatedTime += timeScale * 0.01;
+                if (simulatedTime >= 24) {
+                    simulatedTime = 0;
+                    simulatedDay++;
+                    let daysInMonth = getDaysInMonth(simulatedMonth, simulatedYear);
+                    if (simulatedDay > daysInMonth) {
+                        simulatedDay = 1;
+                        simulatedMonth++;
+                        if (simulatedMonth > 12) {
+                            simulatedMonth = 1;
+                            simulatedYear++;
+                        }
+                    }
+                    createFullOrbitTrajectory();
+                }
+            }
+        }
+
+        function drawInfo() {
+            
+            camera();
+            resetMatrix();
+            
+            fill(255);
+            textSize(20);
+            text("Азимут: " + nf(degrees(sunAzimuth), 0, 2) + "°", 20, 30);
+            text("Высота: " + nf(degrees(sunAltitude), 0, 2) + "°", 20, 60);
+            text("Дата: " + simulatedDay + "." + simulatedMonth + "." + simulatedYear, 20, 90);
+            
+            let hours = floor(simulatedTime);
+            let minutes = floor((simulatedTime - hours) * 60);
+            let seconds = floor((simulatedTime - hours - minutes/60.0) * 3600);
+            text("Время: " + hours + ":" + nf(minutes, 2) + ":" + nf(seconds, 2), 20, 120);
+            
+            if (timeAcceleration) {
+                fill(255, 100, 100);
+                text("УСКОРЕНИЕ: " + timeScale + "x", 20, 150);
+                text("ПРОБЕЛ - остановить", 20, 180);
+            } else {
+                fill(100, 255, 100);
+                text("РЕАЛЬНОЕ ВРЕМЯ", 20, 150);
+                text("1-5 - ускорить время", 20, 180);
+            }
+            
+            text("← → - перемотка по часам", 20, 210);
+            text("T - траектория: " + (showFullOrbit ? "ВКЛ" : "ВЫКЛ"), 20, 240);
+            text("R - сброс вращения", 20, 270);
+            text("0 - сброс к реальному времени", 20, 300);
+        }
+
+        function calculateSunPosition() {
+            let hours = simulatedTime;
+            let N = dayOfYear(simulatedYear, simulatedMonth, simulatedDay);
+            let n = calculateN(simulatedYear, simulatedMonth, simulatedDay, hours);
+            let g = radians(357.528 + 0.9856003 * n);
+            g = normalizeAngle(g);
+            
+            let L = radians(280.460 + 0.9856474 * n);
+            L = normalizeAngle(L);
+            let lambda = L + radians(1.915) * sin(g) + radians(0.020) * sin(2*g);
+            
+            let epsilon = radians(23.439 - 0.0000004 * n);
+            let delta = asin(sin(epsilon) * sin(lambda));
+            
+            let latitude = radians(55.7558);
+            let hourAngle = radians(15 * (hours - 12));
+            
+            sunAltitude = asin(sin(latitude) * sin(delta) + 
+                             cos(latitude) * cos(delta) * cos(hourAngle));
+            
+            sunAzimuth = atan2(sin(hourAngle), 
+                              cos(hourAngle) * sin(latitude) - tan(delta) * cos(latitude));
+            sunAzimuth += PI;
+            
+            let distance = 800;
+            sunPosition.x = distance * cos(sunAzimuth) * cos(sunAltitude);
+            sunPosition.y = distance * sin(sunAltitude);
+            sunPosition.z = distance * sin(sunAzimuth) * cos(sunAltitude);
+            
+           
+            sunPosition.y = -sunPosition.y;
+        }
+
+        function drawSun() {
+            push();
+            translate(sunPosition.x, sunPosition.y, sunPosition.z);
+            
+            
+            fill(255, 255, 0);
+            noStroke();
+            emissiveMaterial(255, 255, 0);
+            sphere(30);
+            
+           
+            push();
+            stroke(255, 200, 0, 100);
+            strokeWeight(2);
+            for (let i = 0; i < 12; i++) {
+                let angle = TWO_PI * i / 12;
+                line(0, 0, 0, 50 * cos(angle), 50 * sin(angle), 0);
+            }
+            pop();
             pop();
         }
 
@@ -39,30 +291,93 @@
             rotationY += (mouseX - pmouseX) * 0.01;
         }
 
-        function grid(w, h, cols, rows) {
-            push();
-            stroke(150); 
-            strokeWeight(1); 
-            
-            let cellWidth = w / cols;  
-            let cellHeight = h / rows;
-            
-            for (let i = 1; i < cols; i++) {
-                let x = -w/2 + i * cellWidth;
-                line(x, -h/2, x, h/2);
-            }
-            
-            for (let j = 1; j < rows; j++) {
-                let y = -h/2 + j * cellHeight;
-                line(-w/2, y, w/2, y); 
-            }
-            pop();
+        
+        function calculateN(year, month, day, hours) {
+            let y = year;
+            let m = month;
+            if (m <= 2) { y--; m += 12; }
+            let a = floor(y / 100);
+            let b = 2 - a + floor(a/4);
+            let jd = floor(365.25 * (y + 4716)) + floor(30.6001 * (m + 1)) + day + b - 1524.5 + hours/24.0;
+            return jd - 2451545.0;
         }
 
-        function sunPos() {}
-    </script>
-    
-    <div id="sketch-container"></div>
-</body>
+        function dayOfYear(year, month, day) {
+            let daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+            if (isLeapYear(year)) daysInMonth[1] = 29;
+            let doy = day;
+            for (let i = 0; i < month - 1; i++) doy += daysInMonth[i];
+            return doy - 1;
+        }
 
+        function isLeapYear(year) {
+            return (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0));
+        }
+
+        function normalizeAngle(angle) {
+            while (angle < 0) angle += TWO_PI;
+            while (angle >= TWO_PI) angle -= TWO_PI;
+            return angle;
+        }
+
+        function getDaysInMonth(month, year) {
+            let daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+            if (month === 2 && isLeapYear(year)) return 29;
+            return daysInMonth[month - 1];
+        }
+
+        function keyPressed() {
+           
+            if (key === ' ') {
+                timeAcceleration = !timeAcceleration;
+            }
+            else if (key === '1') { timeScale = 1.0; timeAcceleration = true; }
+            else if (key === '2') { timeScale = 5.0; timeAcceleration = true; }
+            else if (key === '3') { timeScale = 10.0; timeAcceleration = true; }
+            else if (key === '4') { timeScale = 30.0; timeAcceleration = true; }
+            else if (key === '5') { timeScale = 60.0; timeAcceleration = true; }
+            
+           
+            else if (key === 'r' || key === 'R') {
+                rotationX = 0;
+                rotationY = 0;
+            }
+            
+            
+            else if (key === 't' || key === 'T') {
+                showFullOrbit = !showFullOrbit;
+            }
+            
+            
+            else if (keyCode === LEFT_ARROW) {
+                simulatedTime -= 1;
+                if (simulatedTime < 0) simulatedTime += 24;
+                timeAcceleration = false;
+                createFullOrbitTrajectory();
+            }
+            else if (keyCode === RIGHT_ARROW) {
+                simulatedTime += 1;
+                if (simulatedTime >= 24) simulatedTime -= 24;
+                timeAcceleration = false;
+                createFullOrbitTrajectory();
+            }
+            
+           
+            else if (key === '0') {
+                let now = new Date();
+                simulatedTime = now.getHours() + now.getMinutes()/60.0 + now.getSeconds()/3600.0;
+                simulatedDay = now.getDate();
+                simulatedMonth = now.getMonth() + 1;
+                simulatedYear = now.getFullYear();
+                timeAcceleration = false;
+                createFullOrbitTrajectory();
+            }
+        }
+
+        function windowResized() {
+            resizeCanvas(windowWidth, windowHeight);
+        }
+    </script>
+</body>
 </html>
+
