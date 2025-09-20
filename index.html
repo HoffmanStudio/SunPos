@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Solar Tracker</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/addons/p5.dom.min.js"></script>
+</head>
+<body bgcolor ="#000000">
+    
+    <script>
+        let rotationX = 0;
+        let rotationY = 0;
+        let canvas;
+
+        function setup() {
+            canvas = createCanvas(1920, 1080, WEBGL);
+            canvas.parent('sketch-container');
+        }
+
+        function draw() {
+            background(0);
+            fill(0);
+            stroke(255); 
+            strokeWeight(3);
+            
+            push();
+            rotateX(rotationX);
+            rotateY(rotationY);
+            
+            rectMode(CENTER);
+            rect(0, 0, 500, 500);
+            
+            grid(500, 500, 10, 10);
+            pop();
+        }
+
+        function mouseDragged() {
+            rotationX += ((mouseY - pmouseY) * 0.01) * -1;
+            rotationY += (mouseX - pmouseX) * 0.01;
+        }
+
+        function grid(w, h, cols, rows) {
+            push();
+            stroke(150); 
+            strokeWeight(1); 
+            
+            let cellWidth = w / cols;  
+            let cellHeight = h / rows;
+            
+            for (let i = 1; i < cols; i++) {
+                let x = -w/2 + i * cellWidth;
+                line(x, -h/2, x, h/2);
+            }
+            
+            for (let j = 1; j < rows; j++) {
+                let y = -h/2 + j * cellHeight;
+                line(-w/2, y, w/2, y); 
+            }
+            pop();
+        }
+
+        function sunPos() {}
+    </script>
+    
+    <div id="sketch-container"></div>
+</body>
+</html>
